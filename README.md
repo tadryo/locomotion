@@ -99,6 +99,11 @@ python go2_eval.py -e go2-jump --ckpt 100
 - **Foot Clearance**: 足の持ち上げ
 - **Energy Efficiency**: エネルギー効率
 
+**既存モデルを使用する場合:**
+```bash
+python go2_running_eval.py -e go2-running --ckpt 100
+```
+
 **自分で学習させる場合:**
 ```bash
 python go2_running_train.py -e go2-running --max_iterations 500
