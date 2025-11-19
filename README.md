@@ -92,12 +92,39 @@ python go2_eval.py -e go2-jump --ckpt 100
 ### 走行（Running）
 
 四足歩行ロボット研究に基づいたカスタム報酬関数を実装:
-- **Forward Distance**: 前進距離を直接報酬化
-- **Diagonal Gait**: 対角歩容（トロット）の奨励
-- **Aligned Hips**: ヒップ関節の整列
-- **Straight Line**: 直進性の維持
-- **Foot Clearance**: 足の持ち上げ
-- **Energy Efficiency**: エネルギー効率
+- **Forward Distance** (10.0): 前進距離を直接報酬化 ★最重要
+- **Diagonal Gait** (0.5): 対角歩容（トロット）の奨励
+- **Aligned Hips** (0.3): ヒップ関節の整列
+- **Straight Line** (0.5): 直進性の維持
+- **Foot Clearance** (0.2): 足の持ち上げ
+- **Energy Efficiency** (-0.001): エネルギー効率（ペナルティ）
+
+<details>
+<summary>報酬スケールの詳細</summary>
+
+#### 基本的な報酬（歩行から継承・調整）
+| 報酬名 | スケール | 歩行時 | 説明 |
+|--------|----------|--------|------|
+| tracking_lin_vel | 1.5 | 1.0 | 目標速度(1.5-2.0 m/s)への追従 |
+| tracking_ang_vel | 0.2 | 0.2 | 角速度の追従 |
+| lin_vel_z | -0.5 | -1.0 | Z軸速度ペナルティ（走行時の上下動を許容） |
+| base_height | -30.0 | -50.0 | 高さ乖離ペナルティ（ダイナミックな動きを許容） |
+| action_rate | -0.002 | -0.005 | アクション変化ペナルティ（動的な関節動作を許可） |
+| similar_to_default | -0.05 | -0.1 | デフォルト姿勢乖離ペナルティ（大きな動作を許容） |
+
+#### カスタム報酬（走行特化）
+| 報酬名 | スケール | 説明 |
+|--------|----------|------|
+| **forward_distance** | **10.0** | **実際に前進した距離を報酬化（最重要）** |
+| diagonal_gait | 0.5 | 対角線上の脚（FR-RL, FL-RR）の同期動作 |
+| aligned_hips | 0.3 | 4つのヒップ関節の角度の一貫性 |
+| straight_line | 0.5 | Y軸方向のずれを抑制 |
+| foot_clearance | 0.2 | 膝関節の角速度（ダイナミックな足運び） |
+| energy_efficiency | -0.001 | トルクの二乗和を最小化 |
+
+**毎ステップの最終報酬** = 全報酬関数の重み付き合計
+
+</details>
 
 **既存モデルを使用する場合:**
 ```bash
