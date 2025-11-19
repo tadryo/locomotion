@@ -1,10 +1,10 @@
 # Locomotion
 
-Unitree Go2ロボットの強化学習による移動制御プロジェクト
+UnitreeGo2の強化学習による移動制御プロジェクト
 
 ## プロジェクト概要
 
-Genesis物理シミュレータを使用して、Go2四足ロボットに様々な移動タスクを学習させるプロジェクトです。
+物理シミュレータ[Genesis](https://github.com/Genesis-Embodied-AI/Genesis)を使用して、UnitreeGo2に様々な移動タスクを学習させるプロジェクトです。
 
 ### 実装済み機能
 - ✅ 平地歩行（Walking）
