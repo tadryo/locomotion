@@ -132,6 +132,16 @@ python go2_running_eval.py -e go2-running --ckpt 100
 ```
 
 **自分で学習させる場合:**
+
+*方法A: 歩行モデルから開始（推奨）*
+```bash
+# 歩行モデルを利用して走行学習（効率的）
+python go2_running_from_walking.py -e go2-running-from-walking --max_iterations 300
+python go2_running_eval.py -e go2-running-from-walking --ckpt 50
+```
+✅ **メリット**: 既に歩行を学習済みなので安定して走行に移行できる
+
+*方法B: ゼロから学習*
 ```bash
 python go2_running_train.py -e go2-running --max_iterations 500
 python go2_running_eval.py -e go2-running --ckpt 100
@@ -224,17 +234,18 @@ git switch main
 
 ```
 locomotion/
-├── go2_env.py              # 基本環境クラス
-├── go2_train.py            # 訓練スクリプト（歩行・ジャンプ）
-├── go2_eval.py             # 評価スクリプト（歩行・ジャンプ）
-├── go2_running_env.py      # 走行専用環境クラス
-├── go2_running_train.py    # 走行訓練スクリプト
-├── go2_running_eval.py     # 走行評価スクリプト
-├── go2_backflip.py         # バックフリップデモ
-├── backflip/               # バックフリップ開発ディレクトリ（feature/backflipブランチ）
-├── terrain/                # 地形歩行開発ディレクトリ（feature/terrain-walkingブランチ）
-├── logs/                   # 訓練ログとモデル
-└── environment.yml         # Python環境設定
+├── go2_env.py                   # 基本環境クラス
+├── go2_train.py                 # 訓練スクリプト（歩行・ジャンプ）
+├── go2_eval.py                  # 評価スクリプト（歩行・ジャンプ）
+├── go2_running_env.py           # 走行専用環境クラス
+├── go2_running_train.py         # 走行訓練スクリプト（ゼロから）
+├── go2_running_from_walking.py  # 走行訓練スクリプト（歩行から開始・推奨）
+├── go2_running_eval.py          # 走行評価スクリプト
+├── go2_backflip.py              # バックフリップデモ
+├── backflip/                    # バックフリップ開発ディレクトリ（feature/backflipブランチ）
+├── terrain/                     # 地形歩行開発ディレクトリ（feature/terrain-walkingブランチ）
+├── logs/                        # 訓練ログとモデル
+└── environment.yml              # Python環境設定
 ```
 
 ## トラブルシューティング
