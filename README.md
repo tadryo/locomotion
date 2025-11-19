@@ -9,6 +9,7 @@ UnitreeGo2の強化学習による移動制御プロジェクト
 ### 実装済み機能
 - ✅ 平地歩行（Walking）
 - ✅ ジャンプ（Jump）
+- ✅ 走行（Running）
 - ✅ バックフリップデモ（Backflip Demo）
 
 ### 開発中機能（ブランチで開発中）
@@ -88,6 +89,31 @@ python go2_train.py -e go2-jump --max_iterations 101
 python go2_eval.py -e go2-jump --ckpt 100
 ```
 
+### 走行（Running）
+
+四足歩行ロボット研究に基づいたカスタム報酬関数を実装:
+- **Forward Distance**: 前進距離を直接報酬化
+- **Diagonal Gait**: 対角歩容（トロット）の奨励
+- **Aligned Hips**: ヒップ関節の整列
+- **Straight Line**: 直進性の維持
+- **Foot Clearance**: 足の持ち上げ
+- **Energy Efficiency**: エネルギー効率
+
+**自分で学習させる場合:**
+```bash
+python go2_running_train.py -e go2-running --max_iterations 500
+python go2_running_eval.py -e go2-running --ckpt 100
+```
+
+**途中から学習を再開する場合:**
+```bash
+# model_100.ptから500イテレーションまで続ける
+python go2_running_train.py -e go2-running --resume --ckpt 100 --max_iterations 500
+
+# model_200.ptから1000イテレーションまで
+python go2_running_train.py -e go2-running --resume --ckpt 200 --max_iterations 1000
+```
+
 ### バックフリップ（Backflip）
 
 **既存モデルを使用する場合:**
@@ -159,6 +185,9 @@ locomotion/
 ├── go2_env.py              # 基本環境クラス
 ├── go2_train.py            # 訓練スクリプト（歩行・ジャンプ）
 ├── go2_eval.py             # 評価スクリプト（歩行・ジャンプ）
+├── go2_running_env.py      # 走行専用環境クラス
+├── go2_running_train.py    # 走行訓練スクリプト
+├── go2_running_eval.py     # 走行評価スクリプト
 ├── go2_backflip.py         # バックフリップデモ
 ├── backflip/               # バックフリップ開発ディレクトリ（feature/backflipブランチ）
 ├── terrain/                # 地形歩行開発ディレクトリ（feature/terrain-walkingブランチ）
@@ -172,12 +201,21 @@ locomotion/
 並列環境数を減らしてください：
 ```bash
 python go2_train.py -e go2-walking -B 2048  # デフォルトは4096
+python go2_running_train.py -e go2-running -B 2048  # 走行の場合
 ```
 
 ### TensorBoardが起動しない
 ```bash
 pip install --upgrade tensorboard
 ```
+
+### 途中から学習を再開したい
+`--resume`フラグと`--ckpt`オプションを使用します：
+```bash
+# 例: model_100.ptから続きを学習
+python go2_running_train.py -e go2-running --resume --ckpt 100 --max_iterations 500
+```
+注意: 歩行・ジャンプ用の`go2_train.py`には現在resume機能はありません。
 
 ## ライセンス
 
