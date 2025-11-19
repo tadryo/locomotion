@@ -146,6 +146,16 @@ python go2_running_train.py -e go2-running --resume --ckpt 100 --max_iterations 
 python go2_running_train.py -e go2-running --resume --ckpt 200 --max_iterations 1000
 ```
 
+**1イテレーションごとにモデルを保存する場合（デバッグ・詳細分析用）:**
+```bash
+# 新規学習で1イテレーションごとに保存
+python go2_running_train.py -e go2-running --max_iterations 50 --save_every_step
+
+# 途中から再開 + 1イテレーションごとに保存
+python go2_running_train.py -e go2-running --resume --ckpt 10 --max_iterations 20 --save_every_step
+```
+⚠️ 注意: `--save_every_step`は多くのファイルを生成します（ディスク容量に注意）
+
 ### バックフリップ（Backflip）
 
 **既存モデルを使用する場合:**

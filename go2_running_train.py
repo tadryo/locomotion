@@ -20,7 +20,7 @@ import genesis as gs
 from go2_running_env import Go2RunningEnv
 
 
-def get_train_cfg(exp_name, max_iterations):
+def get_train_cfg(exp_name, max_iterations, save_interval=100):
     train_cfg_dict = {
         "algorithm": {
             "class_name": "PPO",
@@ -58,7 +58,7 @@ def get_train_cfg(exp_name, max_iterations):
         },
         "runner_class_name": "OnPolicyRunner",
         "num_steps_per_env": 24,
-        "save_interval": 100,
+        "save_interval": save_interval,
         "empirical_normalization": None,
         "seed": 1,
     }
@@ -101,9 +101,9 @@ def get_cfgs():
         # PD
         "kp": 20.0,
         "kd": 0.5,
-        # termination - 走行時はより大きな傾きを許容
-        "termination_if_roll_greater_than": 15,  # degree
-        "termination_if_pitch_greater_than": 15,
+        # termination - 学習初期は厳しめに設定
+        "termination_if_roll_greater_than": 12,  # degree
+        "termination_if_pitch_greater_than": 12,
         # base pose
         "base_init_pos": [0.0, 0.0, 0.42],
         "base_init_quat": [1.0, 0.0, 0.0, 0.0],
@@ -128,26 +128,26 @@ def get_cfgs():
         "base_height_target": 0.3,
         "feet_height_target": 0.075,
         "reward_scales": {
-            # 基本的な報酬
+            # 基本的な報酬（姿勢維持を優先）
             "tracking_lin_vel": 1.5,  # 速度追跡を強化
-            "tracking_ang_vel": 0.2,
-            "lin_vel_z": -0.5,  # 垂直方向の動きのペナルティを軽減
-            "base_height": -30.0,  # 高さのペナルティを軽減
-            "action_rate": -0.002,  # アクション変化のペナルティを軽減
-            "similar_to_default": -0.05,  # デフォルト姿勢からの乖離ペナルティを軽減
+            "tracking_ang_vel": 0.5,  # 角速度追従を強化（姿勢安定性）
+            "lin_vel_z": -2.0,  # Z軸速度ペナルティ（ジャンプを抑制）
+            "base_height": -50.0,  # 高さ維持を重視（立つことを優先）
+            "action_rate": -0.01,  # アクション変化ペナルティ（滑らかな動作）
+            "similar_to_default": -0.2,  # デフォルト姿勢維持を重視
             # カスタム報酬（走行特化）
-            "forward_distance": 10.0,  # 前進距離を強く報酬化
-            "diagonal_gait": 0.5,  # 対角歩容の奨励
-            "aligned_hips": 0.3,  # ヒップ関節の整列
-            "straight_line": 0.5,  # 直進性の維持
-            "foot_clearance": 0.2,  # 足の持ち上げ
-            "energy_efficiency": -0.001,  # エネルギー効率（ペナルティ）
+            "forward_distance": 2.0,  # 前進距離（姿勢維持とバランス）
+            "diagonal_gait": 0.3,  # 対角歩容の奨励
+            "aligned_hips": 0.5,  # ヒップ関節の整列（姿勢安定性向上）
+            "straight_line": 1.0,  # 直進性の維持（重要）
+            "foot_clearance": 0.1,  # 足の持ち上げ
+            "energy_efficiency": -0.005,  # エネルギー効率
         },
     }
-    # 走行用コマンド設定：より高速な前進
+    # 走行用コマンド設定：段階的に速度を上げる
     command_cfg = {
         "num_commands": 3,
-        "lin_vel_x_range": [1.5, 2.0],  # 高速前進
+        "lin_vel_x_range": [0.8, 1.2],  # まず歩行から開始（徐々に速度を上げる）
         "lin_vel_y_range": [0.0, 0.0],  # 横方向の動きなし
         "ang_vel_range": [0.0, 0.0],  # 回転なし
     }
@@ -162,20 +162,30 @@ def main():
     parser.add_argument("--max_iterations", type=int, default=500)
     parser.add_argument("--resume", action="store_true", help="続きから学習を再開")
     parser.add_argument("--ckpt", type=int, default=100, help="再開するチェックポイント番号")
+    parser.add_argument("--save_every_step", action="store_true", help="1イテレーションごとにモデルを保存")
     args = parser.parse_args()
 
     gs.init(logging_level="warning")
 
     log_dir = f"logs/{args.exp_name}"
 
+    # save_intervalを設定
+    save_interval = 1 if args.save_every_step else 100
+
     if args.resume:
         # 続きから学習：既存の設定とモデルをロード
         env_cfg, obs_cfg, reward_cfg, command_cfg, train_cfg = pickle.load(open(f"{log_dir}/cfgs.pkl", "rb"))
         train_cfg["runner"]["max_iterations"] = args.max_iterations
+        if args.save_every_step:
+            train_cfg["save_interval"] = 1
+            print("1イテレーションごとにモデルを保存します")
     else:
         # 新規学習：設定を生成してログディレクトリを初期化
         env_cfg, obs_cfg, reward_cfg, command_cfg = get_cfgs()
-        train_cfg = get_train_cfg(args.exp_name, args.max_iterations)
+        train_cfg = get_train_cfg(args.exp_name, args.max_iterations, save_interval)
+
+        if args.save_every_step:
+            print("1イテレーションごとにモデルを保存します")
 
         if os.path.exists(log_dir):
             shutil.rmtree(log_dir)
@@ -216,4 +226,10 @@ python go2_running_train.py -e go2-running --resume --ckpt 100 --max_iterations 
 
 # 別のチェックポイントから再開
 python go2_running_train.py -e go2-running --resume --ckpt 200 --max_iterations 1000
+
+# 1イテレーションごとにモデルを保存（デバッグ・詳細分析用）
+python go2_running_train.py -e go2-running --max_iterations 50 --save_every_step
+
+# 途中から再開 + 1イテレーションごとに保存
+python go2_running_train.py -e go2-running --resume --ckpt 10 --max_iterations 20 --save_every_step
 """
