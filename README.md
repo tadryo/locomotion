@@ -188,3 +188,4 @@ pip install --upgrade tensorboard
 - [Genesis Documentation](https://genesis-world.readthedocs.io/)
 - [RSL-RL Library](https://github.com/leggedrobotics/rsl_rl)
 - [Genesis Backflip](https://github.com/ziyanx02/Genesis-backflip)
+- [Go2 Tasks](https://www.sharwinpatil.info/posts/go2-tasks/)
