@@ -9,10 +9,11 @@ Genesis物理シミュレータを使用して、Go2四足ロボットに様々�
 ### 実装済み機能
 - ✅ 平地歩行（Walking）
 - ✅ ジャンプ（Jump）
+- ✅ バックフリップデモ（Backflip Demo）
 
 ### 開発中機能（ブランチで開発中）
 - 🚧 段差地形歩行（Terrain Walking）- `feature/terrain-walking`ブランチ
-- 🚧 バックフリップ（Backflip）- `feature/backflip`ブランチ
+- 🚧 バックフリップの学習（Backflip Training）- `feature/backflip`ブランチ
 
 ## 環境構築（Mac）
 
@@ -54,6 +55,13 @@ cd locomotion
 
 ## Quick Start
 
+### 学習進捗の確認（全機能共通）
+訓練中または訓練後にTensorBoardで学習進捗を確認できます：
+```bash
+tensorboard --logdir logs
+```
+ブラウザで `http://localhost:6006` を開いてください。
+
 ### 歩行（Walking）
 
 **既存モデルを使用する場合:**
@@ -63,13 +71,7 @@ python go2_eval.py -e go2-walking --ckpt 100
 
 **自分で学習させる場合:**
 ```bash
-# 訓練
 python go2_train.py -e go2-walking --max_iterations 101
-
-# TensorBoardで学習進捗を確認
-tensorboard --logdir logs
-
-# 評価
 python go2_eval.py -e go2-walking --ckpt 100
 ```
 
@@ -82,14 +84,16 @@ python go2_eval.py -e go2-jump --ckpt 100
 
 **自分で学習させる場合:**
 ```bash
-# 訓練
 python go2_train.py -e go2-jump --max_iterations 101
-
-# TensorBoardで学習進捗を確認
-tensorboard --logdir logs
-
-# 評価
 python go2_eval.py -e go2-jump --ckpt 100
+```
+
+### バックフリップ（Backflip）
+
+**既存モデルを使用する場合:**
+```bash
+python go2_backflip.py -e single   # シングルバックフリップ
+python go2_backflip.py -e double   # ダブルバックフリップ
 ```
 
 ---
@@ -98,30 +102,19 @@ python go2_eval.py -e go2-jump --ckpt 100
 
 以下の機能は現在開発中のため、対応するブランチに切り替えて使用してください。
 
-### バックフリップ（Backflip）🚧
+### バックフリップの学習（Backflip Training）🚧
+
+バックフリップのデモは上記のQuick Startから実行できますが、自分で学習させる機能はまだ開発中です。
 
 **ブランチ切り替え:**
 ```bash
 git switch feature/backflip
-```
-
-**既存モデルを使用する場合:**
-```bash
-python go2_backflip.py -e single   # シングルバックフリップ
-python go2_backflip.py -e double   # ダブルバックフリップ
-```
-
-**自分で学習させる場合:**
-```bash
 cd backflip
+```
 
-# 訓練
+**訓練（開発中）:**
+```bash
 python train_backflip.py -e go2-backflip --max_iterations 101
-
-# TensorBoardで学習進捗を確認
-tensorboard --logdir logs
-
-# 評価
 python eval_backflip.py -e go2-backflip --ckpt 100
 ```
 
@@ -130,6 +123,7 @@ python eval_backflip.py -e go2-backflip --ckpt 100
 **ブランチ切り替え:**
 ```bash
 git switch feature/terrain-walking
+cd terrain
 ```
 
 **追加の依存関係:**
@@ -137,23 +131,9 @@ git switch feature/terrain-walking
 pip install pygame
 ```
 
-**既存モデルを使用する場合:**
+**訓練（開発中）:**
 ```bash
-cd terrain
-python go2_terrain_eval.py -e go2-terrain-walking --ckpt 100
-```
-
-**自分で学習させる場合:**
-```bash
-cd terrain
-
-# 訓練
 python go2_terrain_train.py -e go2-terrain-walking --max_iterations 101
-
-# TensorBoardで学習進捗を確認
-tensorboard --logdir logs
-
-# 評価
 python go2_terrain_eval.py -e go2-terrain-walking --ckpt 100
 ```
 
