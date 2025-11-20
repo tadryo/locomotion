@@ -132,3 +132,40 @@ class Go2RunningEnv(Go2Env):
         torque_penalty = torch.sum(torch.square(self.actions), dim=1)
 
         return torque_penalty
+
+    def _reward_gallop_gait(self):
+        """シングルサスペンション・ギャロップ歩容を奨励
+
+        ギャロップの特徴:
+        1. 前脚ペアと後脚ペアが交互に動く
+        2. 各ペア内では片方の脚がわずかに先行（非対称）
+        3. 脊柱の屈曲・伸展による推進力
+
+        脚のインデックス:
+        - FR (Front Right): 0-2
+        - FL (Front Left): 3-5
+        - RR (Rear Right): 6-8
+        - RL (Rear Left): 9-11
+        """
+        # 前脚と後脚の位相差を計算（交互に動くことを奨励）
+        front_phase = torch.mean(self.dof_vel[:, [1, 2, 4, 5]], dim=1)  # 前脚平均
+        rear_phase = torch.mean(self.dof_vel[:, [7, 8, 10, 11]], dim=1)  # 後脚平均
+
+        # 前脚と後脚が逆位相であることを奨励（一方が伸びるとき、もう一方は縮む）
+        phase_opposition = -front_phase * rear_phase
+
+        # ペア内のわずかな非対称性を許容（完全に同期しない）
+        # 前脚ペア: 適度に似た動きだが完全には同期しない
+        fr_vel = torch.mean(torch.abs(self.dof_vel[:, [1, 2]]), dim=1)
+        fl_vel = torch.mean(torch.abs(self.dof_vel[:, [4, 5]]), dim=1)
+        front_similarity = torch.exp(-torch.abs(fr_vel - fl_vel) / 2.0)
+
+        # 後脚ペア: 適度に似た動きだが完全には同期しない
+        rr_vel = torch.mean(torch.abs(self.dof_vel[:, [7, 8]]), dim=1)
+        rl_vel = torch.mean(torch.abs(self.dof_vel[:, [10, 11]]), dim=1)
+        rear_similarity = torch.exp(-torch.abs(rr_vel - rl_vel) / 2.0)
+
+        # 総合報酬: 位相差 + ペア内の類似性
+        gallop_reward = phase_opposition * 0.5 + (front_similarity + rear_similarity) * 0.25
+
+        return torch.clamp(gallop_reward, min=0.0)

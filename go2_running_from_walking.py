@@ -3,6 +3,7 @@ import os
 import pickle
 import shutil
 from importlib import metadata
+from platform import system
 
 try:
     try:
@@ -122,34 +123,36 @@ def get_cfgs():
             "dof_vel": 0.05,
         },
     }
-    # 走行用報酬設定（歩行モデルから段階的に移行）
+    # 走行用報酬設定（歩行ベース + ギャロップ歩容 + 直進性強化）
     reward_cfg = {
         "tracking_sigma": 0.25,
         "base_height_target": 0.3,
         "feet_height_target": 0.075,
         "reward_scales": {
             # 基本的な報酬
-            "tracking_lin_vel": 100.0,  # 速度追跡
-            "tracking_ang_vel": 0.2,
-            "lin_vel_z": -1.5,  # Z軸速度ペナルティ
-            "base_height": -40.0,  # 高さ維持
-            "action_rate": -0.005,  # アクション変化ペナルティ
-            "similar_to_default": -0.1,  # デフォルト姿勢
-            # カスタム報酬（走行特化）
-            "forward_distance": 4.0,  # 前進距離を重視
-            "diagonal_gait": 0.5,  # 対角歩容の奨励
-            "aligned_hips": 0.3,  # ヒップ関節の整列
-            "straight_line": 0.8,  # 直進性の維持
-            "foot_clearance": 0.3,  # 足の持ち上げ
-            "energy_efficiency": -0.002,  # エネルギー効率
+            "tracking_lin_vel": 1.5,  # 速度追跡を強化
+            "tracking_ang_vel": 1.5,  # 角速度追跡を強化（回転を抑制）
+            "lin_vel_z": -2.0,  # Z軸ペナルティ強化（跳ねすぎ防止）
+            "base_height": -50.0,  # 歩行と同じ
+            "action_rate": -0.01,  # アクション変化ペナルティ強化（滑らかな動き）
+            "similar_to_default": -0.2,  # デフォルト姿勢を重視（脚を上げすぎ防止）
+            # カスタム報酬（ギャロップ + 直進性）
+            "gallop_gait": 1.0,  # ギャロップ歩容の奨励
+            "straight_line": 1.5,  # 直進性を強く奨励（クルクル回る問題を解決）
+            # 以下は無効化
+            # "diagonal_gait": 0.5,  # トロット用（ギャロップには不適）
+            # "forward_distance": 4.0,
+            # "aligned_hips": 0.3,
+            # "foot_clearance": 0.3,  # 脚を上げすぎる原因
+            # "energy_efficiency": -0.002,
         },
     }
     # 走行用コマンド設定：段階的に速度を上げる
     command_cfg = {
         "num_commands": 3,
-        "lin_vel_x_range": [1.0, 1.5],  # 歩行から走行への移行速度
+        "lin_vel_x_range": [10.0, 10.0],  # まずは2.5 m/sを目指す
         "lin_vel_y_range": [0.0, 0.0],
-        "ang_vel_range": [0.0, 0.0],
+        "ang_vel_range": [0.0, 0.0],  # 回転なし
     }
 
     return env_cfg, obs_cfg, reward_cfg, command_cfg
@@ -204,6 +207,19 @@ def main():
         print("ゼロから学習を開始します")
 
     runner.learn(num_learning_iterations=args.max_iterations, init_at_random_ep_len=True)
+
+    # トレーニング終了通知
+    print(f"\n{'='*60}")
+    print(f"トレーニングが完了しました！")
+    print(f"実験名: {args.exp_name}")
+    print(f"最大イテレーション: {args.max_iterations}")
+    print(f"ログディレクトリ: {log_dir}")
+    print(f"{'='*60}\n")
+
+    # macOSの場合は通知を表示
+    pf = system()
+    if pf == "Darwin":
+        os.system(f"osascript -e 'display notification \"実験名: {args.exp_name}\" with title \"Go2 トレーニング完了\"'")
 
 
 if __name__ == "__main__":
