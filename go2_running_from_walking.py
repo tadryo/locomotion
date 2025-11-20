@@ -129,7 +129,7 @@ def get_cfgs():
         "feet_height_target": 0.075,
         "reward_scales": {
             # 基本的な報酬
-            "tracking_lin_vel": 10.0,  # 速度追跡
+            "tracking_lin_vel": 100.0,  # 速度追跡
             "tracking_ang_vel": 0.2,
             "lin_vel_z": -1.5,  # Z軸速度ペナルティ
             "base_height": -40.0,  # 高さ維持
