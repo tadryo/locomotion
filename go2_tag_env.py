@@ -83,16 +83,9 @@ class Go2TagEnv:
         # names to indices for evader
         self.motors_dof_idx = [self.robot.get_joint(name).dof_start for name in self.env_cfg["joint_names"]]
 
-        # names to indices for chaser
-        self.chaser_motors_dof_idx = [self.chaser.get_joint(name).dof_start for name in self.env_cfg["joint_names"]]
-
         # PD control parameters for evader
         self.robot.set_dofs_kp([self.env_cfg["kp"]] * self.num_actions, self.motors_dof_idx)
         self.robot.set_dofs_kv([self.env_cfg["kd"]] * self.num_actions, self.motors_dof_idx)
-
-        # PD control parameters for chaser
-        self.chaser.set_dofs_kp([self.env_cfg["kp"]] * self.num_actions, self.chaser_motors_dof_idx)
-        self.chaser.set_dofs_kv([self.env_cfg["kd"]] * self.num_actions, self.chaser_motors_dof_idx)
 
         # prepare reward functions
         self.reward_functions, self.episode_sums = dict(), dict()
@@ -110,12 +103,8 @@ class Go2TagEnv:
         )
 
         # initialize buffers for chaser
-        self.chaser_base_lin_vel = torch.zeros((self.num_envs, 3), device=gs.device, dtype=gs.tc_float)
-        self.chaser_base_ang_vel = torch.zeros((self.num_envs, 3), device=gs.device, dtype=gs.tc_float)
         self.chaser_base_pos = torch.zeros((self.num_envs, 3), device=gs.device, dtype=gs.tc_float)
         self.chaser_base_quat = torch.zeros((self.num_envs, 4), device=gs.device, dtype=gs.tc_float)
-        self.chaser_dof_pos = torch.zeros((self.num_envs, self.num_actions), device=gs.device, dtype=gs.tc_float)
-        self.chaser_dof_vel = torch.zeros((self.num_envs, self.num_actions), device=gs.device, dtype=gs.tc_float)
 
         self.obs_buf = torch.zeros((self.num_envs, self.num_obs), device=gs.device, dtype=gs.tc_float)
         self.rew_buf = torch.zeros((self.num_envs,), device=gs.device, dtype=gs.tc_float)
@@ -143,48 +132,25 @@ class Go2TagEnv:
         self.extras["observations"] = dict()
 
     def _update_chaser_behavior(self):
-        """追跡者（鬼）の行動: 逃走者を追いかける"""
+        """追跡者（鬼）の行動: 逃走者を追いかける（簡易版）"""
         # 相対位置を計算
         relative_pos = self.base_pos - self.chaser_base_pos
         self.distance_to_chaser[:] = torch.norm(relative_pos[:, :2], dim=1)
 
-        # 追跡者のローカル座標系での相対位置
-        inv_chaser_quat = inv_quat(self.chaser_base_quat)
-        self.relative_pos_to_chaser[:] = transform_by_quat(relative_pos, inv_chaser_quat)
-
         # 追跡速度を設定
-        chaser_speed = self.env_cfg.get("chaser_speed", 0.8)
+        chaser_speed = self.env_cfg.get("chaser_speed", 0.6)
 
         # 逃走者の方向に向かって移動
         direction = relative_pos[:, :2]
         direction_norm = torch.norm(direction, dim=1, keepdim=True)
         direction_normalized = direction / (direction_norm + 1e-6)
 
-        # 追跡者の目標速度（グローバル座標系）
-        target_vel_global = torch.zeros((self.num_envs, 3), device=gs.device, dtype=gs.tc_float)
-        target_vel_global[:, :2] = direction_normalized * chaser_speed
+        # 追跡者の新しい位置を計算（直接位置を更新）
+        new_chaser_pos = self.chaser_base_pos.clone()
+        new_chaser_pos[:, :2] += direction_normalized * chaser_speed * self.dt
 
-        # ローカル座標系に変換
-        target_vel_local = transform_by_quat(target_vel_global, inv_chaser_quat)
-
-        # 簡単な制御: 目標速度に応じた関節角度を計算
-        # これは簡略化された実装で、より高度な制御が必要な場合は別途ポリシーを学習
-        chaser_actions = torch.zeros_like(self.actions)
-
-        # 前進動作のための簡単な歩行パターン
-        phase = (self.episode_length_buf % 50) / 50.0 * 2 * math.pi
-
-        # 前進速度に応じた振幅
-        amplitude = torch.clamp(target_vel_local[:, 0:1], 0, 1.0) * 0.5
-
-        # 簡単な歩行パターン（交互の脚の動き）
-        chaser_actions[:, 0::3] = amplitude * torch.sin(phase).unsqueeze(1)  # hip
-        chaser_actions[:, 1::3] = amplitude * torch.cos(phase).unsqueeze(1)  # thigh
-        chaser_actions[:, 2::3] = -amplitude * torch.cos(phase).unsqueeze(1)  # calf
-
-        # 追跡者を制御
-        target_chaser_dof_pos = chaser_actions * self.env_cfg["action_scale"] + self.default_dof_pos
-        self.chaser.control_dofs_position(target_chaser_dof_pos, self.chaser_motors_dof_idx)
+        # 追跡者の位置を更新
+        self.chaser.set_pos(new_chaser_pos, zero_velocity=False)
 
     def step(self, actions):
         self.actions = torch.clip(actions, -self.env_cfg["clip_actions"], self.env_cfg["clip_actions"])
@@ -216,11 +182,6 @@ class Go2TagEnv:
         # update buffers for chaser
         self.chaser_base_pos[:] = self.chaser.get_pos()
         self.chaser_base_quat[:] = self.chaser.get_quat()
-        inv_chaser_quat = inv_quat(self.chaser_base_quat)
-        self.chaser_base_lin_vel[:] = transform_by_quat(self.chaser.get_vel(), inv_chaser_quat)
-        self.chaser_base_ang_vel[:] = transform_by_quat(self.chaser.get_ang(), inv_chaser_quat)
-        self.chaser_dof_pos[:] = self.chaser.get_dofs_position(self.chaser_motors_dof_idx)
-        self.chaser_dof_vel[:] = self.chaser.get_dofs_velocity(self.chaser_motors_dof_idx)
 
         # 相対位置を更新
         relative_pos = self.base_pos - self.chaser_base_pos
@@ -303,16 +264,6 @@ class Go2TagEnv:
         self.base_ang_vel[envs_idx] = 0
         self.robot.zero_all_dofs_velocity(envs_idx)
 
-        # reset chaser dofs
-        self.chaser_dof_pos[envs_idx] = self.default_dof_pos
-        self.chaser_dof_vel[envs_idx] = 0.0
-        self.chaser.set_dofs_position(
-            position=self.chaser_dof_pos[envs_idx],
-            dofs_idx_local=self.chaser_motors_dof_idx,
-            zero_velocity=True,
-            envs_idx=envs_idx,
-        )
-
         # reset chaser base (逃走者から一定距離離れた位置)
         chaser_offset = torch.zeros((len(envs_idx), 3), device=gs.device, dtype=gs.tc_float)
         chaser_offset[:, 0] = gs_rand_float(-3.0, -2.0, (len(envs_idx),), gs.device)
@@ -322,9 +273,6 @@ class Go2TagEnv:
         self.chaser_base_quat[envs_idx] = self.chaser_init_quat.reshape(1, -1)
         self.chaser.set_pos(self.chaser_base_pos[envs_idx], zero_velocity=False, envs_idx=envs_idx)
         self.chaser.set_quat(self.chaser_base_quat[envs_idx], zero_velocity=False, envs_idx=envs_idx)
-        self.chaser_base_lin_vel[envs_idx] = 0
-        self.chaser_base_ang_vel[envs_idx] = 0
-        self.chaser.zero_all_dofs_velocity(envs_idx)
 
         # reset buffers
         self.last_actions[envs_idx] = 0.0
