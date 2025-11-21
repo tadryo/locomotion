@@ -38,7 +38,8 @@ def main():
     if os.path.exists(chaser_model_path):
         from rsl_rl.modules import ActorCritic
 
-        policy_cfg = train_cfg["policy"]
+        policy_cfg = train_cfg["policy"].copy()
+        policy_cfg.pop("class_name", None)  # class_nameを除外
         temp_policy = ActorCritic(obs_cfg["num_obs"], None, env_cfg["num_actions"], **policy_cfg).to(gs.device)
         loaded_dict = torch.load(chaser_model_path)
         temp_policy.load_state_dict(loaded_dict["model_state_dict"])

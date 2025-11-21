@@ -176,7 +176,8 @@ def main():
             from rsl_rl.modules import ActorCritic
 
             # 追跡者用のポリシーを作成
-            policy_cfg = train_cfg["policy"]
+            policy_cfg = train_cfg["policy"].copy()
+            policy_cfg.pop("class_name", None)  # class_nameを除外
             temp_policy = ActorCritic(obs_cfg["num_obs"], None, env_cfg["num_actions"], **policy_cfg).to(gs.device)
             loaded_dict = torch.load(chaser_model_path)
             temp_policy.load_state_dict(loaded_dict["model_state_dict"])
