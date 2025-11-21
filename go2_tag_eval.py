@@ -1,21 +1,33 @@
 import argparse
 import os
 import pickle
+from importlib import metadata
+
+import torch
+
+try:
+    try:
+        if metadata.version("rsl-rl"):
+            raise ImportError
+    except metadata.PackageNotFoundError:
+        if metadata.version("rsl-rl-lib") != "2.2.4":
+            raise ImportError
+except (metadata.PackageNotFoundError, ImportError) as e:
+    raise ImportError("Please uninstall 'rsl_rl' and install 'rsl-rl-lib==2.2.4'.") from e
+from rsl_rl.runners import OnPolicyRunner
 
 import genesis as gs
-import torch
 
 from go2_tag_env import Go2TagEnv
 
 
-@torch.no_grad()
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--exp_name", type=str, default="go2-tag-game")
     parser.add_argument("--ckpt", type=int, default=500)
     args = parser.parse_args()
 
-    gs.init(logging_level="warning")
+    gs.init()
 
     log_dir = f"logs/{args.exp_name}"
     env_cfg, obs_cfg, reward_cfg, command_cfg, train_cfg = pickle.load(open(f"{log_dir}/cfgs.pkl", "rb"))
@@ -25,22 +37,17 @@ def main():
         num_envs=1, env_cfg=env_cfg, obs_cfg=obs_cfg, reward_cfg=reward_cfg, command_cfg=command_cfg, show_viewer=True
     )
 
-    # Load policy
-    from rsl_rl.modules import ActorCritic
-
-    policy_cfg = train_cfg["policy"]
-    policy = ActorCritic(env.num_obs, env.num_privileged_obs, env.num_actions, **policy_cfg).to(env.device)
-    model_path = f"{log_dir}/model_{args.ckpt}.pt"
-    print(f"Loading model from: {model_path}")
-    loaded_dict = torch.load(model_path)
-    policy.load_state_dict(loaded_dict["model_state_dict"])
-    policy.eval()
+    runner = OnPolicyRunner(env, train_cfg, log_dir, device=gs.device)
+    resume_path = os.path.join(log_dir, f"model_{args.ckpt}.pt")
+    print(f"Loading model from: {resume_path}")
+    runner.load(resume_path)
+    policy = runner.get_inference_policy(device=gs.device)
 
     # Evaluation loop
     obs, _ = env.reset()
     with torch.no_grad():
         while True:
-            actions = policy.act_inference(obs)
+            actions = policy(obs)
             obs, rew, done, info = env.step(actions)
 
             # Print distance info
