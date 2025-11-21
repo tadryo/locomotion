@@ -76,6 +76,12 @@ python go2_train.py -e go2-walking --max_iterations 101
 python go2_eval.py -e go2-walking --ckpt 100
 ```
 
+**学習済みモデルを読み込んで別の設定で学習する場合:**
+```bash
+# 例: go2-walkingのmodel_100.ptを読み込んで、異なる速度設定で学習
+python go2_train.py -e go2-walking-1.0 --load_exp_name go2-walking --ckpt 100 --max_iterations 101
+```
+
 ### ジャンプ（Jump）
 
 **既存モデルを使用する場合:**

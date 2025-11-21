@@ -3,6 +3,7 @@ import os
 import pickle
 import shutil
 from importlib import metadata
+from platform import system
 
 try:
     try:
@@ -123,7 +124,7 @@ def get_cfgs():
         },
     }
     # walking reward configuration
-    # """
+    """
     reward_cfg = {
         "tracking_sigma": 0.25,
         "base_height_target": 0.3,
@@ -137,9 +138,9 @@ def get_cfgs():
             "similar_to_default": -0.1,
         },
     }
-    # """
-    # jump reward configuration
     """
+    # jump reward configuration
+    # """
     reward_cfg = {
         "tracking_sigma": 0.25,
         "base_height_target": 0.2,
@@ -153,7 +154,7 @@ def get_cfgs():
             "similar_to_default": -0.1,
         },
     }
-    """
+    # """
     command_cfg = {
         "num_commands": 3,
         "lin_vel_x_range": [0.5, 0.5],
@@ -169,6 +170,8 @@ def main():
     parser.add_argument("-e", "--exp_name", type=str, default="go2-walking")
     parser.add_argument("-B", "--num_envs", type=int, default=4096)
     parser.add_argument("--max_iterations", type=int, default=101)
+    parser.add_argument("--load_exp_name", type=str, default=None)
+    parser.add_argument("--ckpt", type=int, default=100)
     args = parser.parse_args()
 
     gs.init(logging_level="warning")
@@ -192,7 +195,22 @@ def main():
 
     runner = OnPolicyRunner(env, train_cfg, log_dir, device=gs.device)
 
+    if args.load_exp_name:
+        model_path = f"logs/{args.load_exp_name}/model_{args.ckpt}.pt"
+        print(f"Loading pretrained model: {model_path}")
+        if os.path.exists(model_path):
+            runner.load(model_path)
+        else:
+            print(f"Error: Model not found: {model_path}")
+            exit(1)
+
     runner.learn(num_learning_iterations=args.max_iterations, init_at_random_ep_len=True)
+
+    # macOS notification with sound
+    pf = system()
+    if pf == "Darwin":
+        os.system(f"afplay /System/Library/Sounds/Blow.aiff")
+        os.system(f"osascript -e 'display notification \"Experiment: {args.exp_name}\" with title \"Go2 Training Completed\"'")
 
 
 if __name__ == "__main__":
