@@ -171,14 +171,6 @@ class Go2TagEnv:
         self.chaser_commands[:, 1] = direction_normalized[:, 1] * chaser_speed
         self.chaser_commands[:, 2] = 0.0  # 角速度は0
 
-        # 追跡者の観測を構築
-        inv_chaser_quat = inv_quat(self.chaser_base_quat)
-        self.chaser_base_lin_vel[:] = transform_by_quat(self.chaser.get_vel(), inv_chaser_quat)
-        self.chaser_base_ang_vel[:] = transform_by_quat(self.chaser.get_ang(), inv_chaser_quat)
-        self.chaser_projected_gravity[:] = transform_by_quat(self.global_gravity, inv_chaser_quat)
-        self.chaser_dof_pos[:] = self.chaser.get_dofs_position(self.chaser_motors_dof_idx)
-        self.chaser_dof_vel[:] = self.chaser.get_dofs_velocity(self.chaser_motors_dof_idx)
-
         # 観測を構築（逃走者と同じ形式）
         self.chaser_obs_buf[:] = torch.cat(
             [
@@ -207,6 +199,16 @@ class Go2TagEnv:
         target_dof_pos = exec_actions * self.env_cfg["action_scale"] + self.default_dof_pos
         self.robot.control_dofs_position(target_dof_pos, self.motors_dof_idx)
 
+        # update buffers for chaser (before controlling)
+        self.chaser_base_pos[:] = self.chaser.get_pos()
+        self.chaser_base_quat[:] = self.chaser.get_quat()
+        inv_chaser_quat = inv_quat(self.chaser_base_quat)
+        self.chaser_base_lin_vel[:] = transform_by_quat(self.chaser.get_vel(), inv_chaser_quat)
+        self.chaser_base_ang_vel[:] = transform_by_quat(self.chaser.get_ang(), inv_chaser_quat)
+        self.chaser_projected_gravity[:] = transform_by_quat(self.global_gravity, inv_chaser_quat)
+        self.chaser_dof_pos[:] = self.chaser.get_dofs_position(self.chaser_motors_dof_idx)
+        self.chaser_dof_vel[:] = self.chaser.get_dofs_velocity(self.chaser_motors_dof_idx)
+
         # 追跡者を制御
         self._update_chaser_behavior()
 
@@ -228,7 +230,7 @@ class Go2TagEnv:
         self.dof_pos[:] = self.robot.get_dofs_position(self.motors_dof_idx)
         self.dof_vel[:] = self.robot.get_dofs_velocity(self.motors_dof_idx)
 
-        # update buffers for chaser
+        # update chaser position again after step
         self.chaser_base_pos[:] = self.chaser.get_pos()
         self.chaser_base_quat[:] = self.chaser.get_quat()
 
