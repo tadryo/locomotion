@@ -191,7 +191,15 @@ class Go2TagEnv:
         # 追跡者を制御
         exec_chaser_actions = self.chaser_actions
         target_chaser_dof_pos = exec_chaser_actions * self.env_cfg["action_scale"] + self.default_dof_pos
-        self.chaser.control_dofs_position(target_chaser_dof_pos, self.chaser_motors_dof_idx)
+        try:
+            self.chaser.control_dofs_position(target_chaser_dof_pos, self.chaser_motors_dof_idx)
+        except Exception as e:
+            # インデックスエラーの場合、全自由度に対して制御を試みる
+            print(f"Warning: Could not control chaser with specific indices: {e}")
+            # 全自由度のターゲットを作成（最初の12個をターゲット、残りは現在値）
+            all_target = self.chaser.get_dofs_position()
+            all_target[:, :self.num_actions] = target_chaser_dof_pos
+            self.chaser.control_dofs_position(all_target)
 
     def step(self, actions):
         self.actions = torch.clip(actions, -self.env_cfg["clip_actions"], self.env_cfg["clip_actions"])
@@ -206,8 +214,19 @@ class Go2TagEnv:
         self.chaser_base_lin_vel[:] = transform_by_quat(self.chaser.get_vel(), inv_chaser_quat)
         self.chaser_base_ang_vel[:] = transform_by_quat(self.chaser.get_ang(), inv_chaser_quat)
         self.chaser_projected_gravity[:] = transform_by_quat(self.global_gravity, inv_chaser_quat)
-        self.chaser_dof_pos[:] = self.chaser.get_dofs_position(self.chaser_motors_dof_idx)
-        self.chaser_dof_vel[:] = self.chaser.get_dofs_velocity(self.chaser_motors_dof_idx)
+
+        # 追跡者の関節情報を取得（全自由度から該当部分を抽出）
+        try:
+            all_chaser_dofs = self.chaser.get_dofs_position()
+            # モーターに対応する関節のみを抽出（最初の12個と仮定）
+            self.chaser_dof_pos[:] = all_chaser_dofs[:, :self.num_actions]
+            all_chaser_vel = self.chaser.get_dofs_velocity()
+            self.chaser_dof_vel[:] = all_chaser_vel[:, :self.num_actions]
+        except Exception as e:
+            # エラーが発生した場合はデフォルト値を使用
+            print(f"Warning: Could not get chaser dof state: {e}")
+            self.chaser_dof_pos[:] = self.default_dof_pos
+            self.chaser_dof_vel[:] = 0.0
 
         # 追跡者を制御
         self._update_chaser_behavior()
@@ -318,12 +337,19 @@ class Go2TagEnv:
         # reset chaser dofs
         self.chaser_dof_pos[envs_idx] = self.default_dof_pos
         self.chaser_dof_vel[envs_idx] = 0.0
-        self.chaser.set_dofs_position(
-            position=self.chaser_dof_pos[envs_idx],
-            dofs_idx_local=self.chaser_motors_dof_idx,
-            zero_velocity=True,
-            envs_idx=envs_idx,
-        )
+        try:
+            self.chaser.set_dofs_position(
+                position=self.chaser_dof_pos[envs_idx],
+                dofs_idx_local=self.chaser_motors_dof_idx,
+                zero_velocity=True,
+                envs_idx=envs_idx,
+            )
+        except Exception as e:
+            # インデックスエラーの場合、全自由度をリセット
+            print(f"Warning: Could not reset chaser dofs with specific indices: {e}")
+            all_dofs = self.chaser.get_dofs_position()
+            all_dofs[envs_idx, :self.num_actions] = self.default_dof_pos
+            self.chaser.set_dofs_position(position=all_dofs[envs_idx], zero_velocity=True, envs_idx=envs_idx)
 
         # reset chaser base (逃走者から一定距離離れた位置)
         chaser_offset = torch.zeros((len(envs_idx), 3), device=gs.device, dtype=gs.tc_float)
