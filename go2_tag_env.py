@@ -11,13 +11,16 @@ def gs_rand_float(lower, upper, shape, device):
 class Go2TagEnv:
     """鬼ごっこ環境: 追跡者（鬼）から逃げるロボット"""
 
-    def __init__(self, num_envs, env_cfg, obs_cfg, reward_cfg, command_cfg, show_viewer=False):
+    def __init__(self, num_envs, env_cfg, obs_cfg, reward_cfg, command_cfg, show_viewer=False, chaser_policy=None):
         self.num_envs = num_envs
         self.num_obs = obs_cfg["num_obs"]
         self.num_privileged_obs = None
         self.num_actions = env_cfg["num_actions"]
         self.num_commands = command_cfg["num_commands"]
         self.device = gs.device
+
+        # 追跡者用のポリシー
+        self.chaser_policy = chaser_policy
 
         self.simulate_action_latency = True
         self.dt = 0.02
@@ -83,9 +86,16 @@ class Go2TagEnv:
         # names to indices for evader
         self.motors_dof_idx = [self.robot.get_joint(name).dof_start for name in self.env_cfg["joint_names"]]
 
+        # names to indices for chaser
+        self.chaser_motors_dof_idx = [self.chaser.get_joint(name).dof_start for name in self.env_cfg["joint_names"]]
+
         # PD control parameters for evader
         self.robot.set_dofs_kp([self.env_cfg["kp"]] * self.num_actions, self.motors_dof_idx)
         self.robot.set_dofs_kv([self.env_cfg["kd"]] * self.num_actions, self.motors_dof_idx)
+
+        # PD control parameters for chaser
+        self.chaser.set_dofs_kp([self.env_cfg["kp"]] * self.num_actions, self.chaser_motors_dof_idx)
+        self.chaser.set_dofs_kv([self.env_cfg["kd"]] * self.num_actions, self.chaser_motors_dof_idx)
 
         # prepare reward functions
         self.reward_functions, self.episode_sums = dict(), dict()
@@ -105,6 +115,14 @@ class Go2TagEnv:
         # initialize buffers for chaser
         self.chaser_base_pos = torch.zeros((self.num_envs, 3), device=gs.device, dtype=gs.tc_float)
         self.chaser_base_quat = torch.zeros((self.num_envs, 4), device=gs.device, dtype=gs.tc_float)
+        self.chaser_base_lin_vel = torch.zeros((self.num_envs, 3), device=gs.device, dtype=gs.tc_float)
+        self.chaser_base_ang_vel = torch.zeros((self.num_envs, 3), device=gs.device, dtype=gs.tc_float)
+        self.chaser_projected_gravity = torch.zeros((self.num_envs, 3), device=gs.device, dtype=gs.tc_float)
+        self.chaser_dof_pos = torch.zeros((self.num_envs, self.num_actions), device=gs.device, dtype=gs.tc_float)
+        self.chaser_dof_vel = torch.zeros((self.num_envs, self.num_actions), device=gs.device, dtype=gs.tc_float)
+        self.chaser_actions = torch.zeros((self.num_envs, self.num_actions), device=gs.device, dtype=gs.tc_float)
+        self.chaser_commands = torch.zeros((self.num_envs, self.num_commands), device=gs.device, dtype=gs.tc_float)
+        self.chaser_obs_buf = torch.zeros((self.num_envs, self.num_obs), device=gs.device, dtype=gs.tc_float)
 
         self.obs_buf = torch.zeros((self.num_envs, self.num_obs), device=gs.device, dtype=gs.tc_float)
         self.rew_buf = torch.zeros((self.num_envs,), device=gs.device, dtype=gs.tc_float)
@@ -132,25 +150,56 @@ class Go2TagEnv:
         self.extras["observations"] = dict()
 
     def _update_chaser_behavior(self):
-        """追跡者（鬼）の行動: 逃走者を追いかける（簡易版）"""
-        # 相対位置を計算
+        """追跡者（鬼）の行動: 学習済みポリシーで逃走者を追いかける"""
+        if self.chaser_policy is None:
+            return
+
+        # 相対位置を計算（逃走者の方向）
         relative_pos = self.base_pos - self.chaser_base_pos
         self.distance_to_chaser[:] = torch.norm(relative_pos[:, :2], dim=1)
 
-        # 追跡速度を設定
-        chaser_speed = self.env_cfg.get("chaser_speed", 0.6)
-
-        # 逃走者の方向に向かって移動
+        # 追跡者のコマンドを設定（逃走者の方向に向かう）
         direction = relative_pos[:, :2]
         direction_norm = torch.norm(direction, dim=1, keepdim=True)
         direction_normalized = direction / (direction_norm + 1e-6)
 
-        # 追跡者の新しい位置を計算（直接位置を更新）
-        new_chaser_pos = self.chaser_base_pos.clone()
-        new_chaser_pos[:, :2] += direction_normalized * chaser_speed * self.dt
+        # 追跡速度を設定
+        chaser_speed = self.env_cfg.get("chaser_speed", 0.8)
 
-        # 追跡者の位置を更新
-        self.chaser.set_pos(new_chaser_pos, zero_velocity=False)
+        # コマンドベクトルを設定（x方向の速度、y方向の速度、角速度）
+        self.chaser_commands[:, 0] = direction_normalized[:, 0] * chaser_speed
+        self.chaser_commands[:, 1] = direction_normalized[:, 1] * chaser_speed
+        self.chaser_commands[:, 2] = 0.0  # 角速度は0
+
+        # 追跡者の観測を構築
+        inv_chaser_quat = inv_quat(self.chaser_base_quat)
+        self.chaser_base_lin_vel[:] = transform_by_quat(self.chaser.get_vel(), inv_chaser_quat)
+        self.chaser_base_ang_vel[:] = transform_by_quat(self.chaser.get_ang(), inv_chaser_quat)
+        self.chaser_projected_gravity[:] = transform_by_quat(self.global_gravity, inv_chaser_quat)
+        self.chaser_dof_pos[:] = self.chaser.get_dofs_position(self.chaser_motors_dof_idx)
+        self.chaser_dof_vel[:] = self.chaser.get_dofs_velocity(self.chaser_motors_dof_idx)
+
+        # 観測を構築（逃走者と同じ形式）
+        self.chaser_obs_buf[:] = torch.cat(
+            [
+                self.chaser_base_ang_vel * self.obs_scales["ang_vel"],  # 3
+                self.chaser_projected_gravity,  # 3
+                self.chaser_commands * self.commands_scale,  # 3
+                (self.chaser_dof_pos - self.default_dof_pos) * self.obs_scales["dof_pos"],  # 12
+                self.chaser_dof_vel * self.obs_scales["dof_vel"],  # 12
+                self.chaser_actions,  # 12
+            ],
+            axis=-1,
+        )
+
+        # ポリシーからアクションを取得
+        with torch.no_grad():
+            self.chaser_actions[:] = self.chaser_policy(self.chaser_obs_buf)
+
+        # 追跡者を制御
+        exec_chaser_actions = self.chaser_actions
+        target_chaser_dof_pos = exec_chaser_actions * self.env_cfg["action_scale"] + self.default_dof_pos
+        self.chaser.control_dofs_position(target_chaser_dof_pos, self.chaser_motors_dof_idx)
 
     def step(self, actions):
         self.actions = torch.clip(actions, -self.env_cfg["clip_actions"], self.env_cfg["clip_actions"])
@@ -264,6 +313,16 @@ class Go2TagEnv:
         self.base_ang_vel[envs_idx] = 0
         self.robot.zero_all_dofs_velocity(envs_idx)
 
+        # reset chaser dofs
+        self.chaser_dof_pos[envs_idx] = self.default_dof_pos
+        self.chaser_dof_vel[envs_idx] = 0.0
+        self.chaser.set_dofs_position(
+            position=self.chaser_dof_pos[envs_idx],
+            dofs_idx_local=self.chaser_motors_dof_idx,
+            zero_velocity=True,
+            envs_idx=envs_idx,
+        )
+
         # reset chaser base (逃走者から一定距離離れた位置)
         chaser_offset = torch.zeros((len(envs_idx), 3), device=gs.device, dtype=gs.tc_float)
         chaser_offset[:, 0] = gs_rand_float(-3.0, -2.0, (len(envs_idx),), gs.device)
@@ -273,6 +332,11 @@ class Go2TagEnv:
         self.chaser_base_quat[envs_idx] = self.chaser_init_quat.reshape(1, -1)
         self.chaser.set_pos(self.chaser_base_pos[envs_idx], zero_velocity=False, envs_idx=envs_idx)
         self.chaser.set_quat(self.chaser_base_quat[envs_idx], zero_velocity=False, envs_idx=envs_idx)
+        self.chaser_base_lin_vel[envs_idx] = 0
+        self.chaser_base_ang_vel[envs_idx] = 0
+        self.chaser.zero_all_dofs_velocity(envs_idx)
+        self.chaser_actions[envs_idx] = 0.0
+        self.chaser_commands[envs_idx] = 0.0
 
         # reset buffers
         self.last_actions[envs_idx] = 0.0

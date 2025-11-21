@@ -5,6 +5,8 @@ import shutil
 from importlib import metadata
 from platform import system
 
+import torch
+
 try:
     try:
         if metadata.version("rsl-rl"):
@@ -154,7 +156,7 @@ def main():
     parser.add_argument("-e", "--exp_name", type=str, default="go2-tag-game")
     parser.add_argument("-B", "--num_envs", type=int, default=4096)
     parser.add_argument("--max_iterations", type=int, default=500)
-    parser.add_argument("--load_exp_name", type=str, default=None)
+    parser.add_argument("--load_exp_name", type=str, default="go2-walking-0.5")
     parser.add_argument("--ckpt", type=int, default=100)
     parser.add_argument("--show_viewer", action="store_true", help="Show viewer for debugging")
     args = parser.parse_args()
@@ -164,6 +166,25 @@ def main():
     log_dir = f"logs/{args.exp_name}"
     env_cfg, obs_cfg, reward_cfg, command_cfg = get_cfgs()
     train_cfg = get_train_cfg(args.exp_name, args.max_iterations)
+
+    # 学習済みモデルを追跡者用に読み込む
+    chaser_policy = None
+    if args.load_exp_name:
+        chaser_model_path = f"logs/{args.load_exp_name}/model_{args.ckpt}.pt"
+        print(f"Loading pretrained chaser model: {chaser_model_path}")
+        if os.path.exists(chaser_model_path):
+            from rsl_rl.modules import ActorCritic
+
+            # 追跡者用のポリシーを作成
+            policy_cfg = train_cfg["policy"]
+            temp_policy = ActorCritic(obs_cfg["num_obs"], None, env_cfg["num_actions"], **policy_cfg).to(gs.device)
+            loaded_dict = torch.load(chaser_model_path)
+            temp_policy.load_state_dict(loaded_dict["model_state_dict"])
+            temp_policy.eval()
+            chaser_policy = temp_policy.act_inference
+            print("Chaser policy loaded successfully")
+        else:
+            print(f"Warning: Chaser model not found: {chaser_model_path}")
 
     if os.path.exists(log_dir):
         shutil.rmtree(log_dir)
@@ -181,18 +202,20 @@ def main():
         reward_cfg=reward_cfg,
         command_cfg=command_cfg,
         show_viewer=args.show_viewer,
+        chaser_policy=chaser_policy,
     )
 
     runner = OnPolicyRunner(env, train_cfg, log_dir, device=gs.device)
 
+    # 逃走者のポリシーも学習済みモデルから初期化
     if args.load_exp_name:
         model_path = f"logs/{args.load_exp_name}/model_{args.ckpt}.pt"
-        print(f"Loading pretrained model: {model_path}")
+        print(f"Loading pretrained evader model: {model_path}")
         if os.path.exists(model_path):
             runner.load(model_path)
+            print("Evader policy loaded successfully")
         else:
-            print(f"Error: Model not found: {model_path}")
-            exit(1)
+            print(f"Warning: Evader model not found: {model_path}")
 
     runner.learn(num_learning_iterations=args.max_iterations, init_at_random_ep_len=True)
 
@@ -210,12 +233,12 @@ if __name__ == "__main__":
 
 
 """
-# training
+# training (loads go2-walking-0.5 by default)
 python go2_tag_train.py --exp_name go2-tag-game --num_envs 4096 --max_iterations 500
 
 # training with viewer (for debugging)
 python go2_tag_train.py --exp_name go2-tag-game --num_envs 16 --max_iterations 10 --show_viewer
 
-# load pretrained model and continue training
-python go2_tag_train.py --exp_name go2-tag-game-v2 --load_exp_name go2-tag-game --ckpt 500
+# load specific pretrained model
+python go2_tag_train.py --exp_name go2-tag-game --load_exp_name go2-walking-0.5 --ckpt 100
 """

@@ -32,9 +32,31 @@ def main():
     log_dir = f"logs/{args.exp_name}"
     env_cfg, obs_cfg, reward_cfg, command_cfg, train_cfg = pickle.load(open(f"{log_dir}/cfgs.pkl", "rb"))
 
+    # Load chaser policy
+    chaser_policy = None
+    chaser_model_path = "logs/go2-walking-0.5/model_100.pt"
+    if os.path.exists(chaser_model_path):
+        from rsl_rl.modules import ActorCritic
+
+        policy_cfg = train_cfg["policy"]
+        temp_policy = ActorCritic(obs_cfg["num_obs"], None, env_cfg["num_actions"], **policy_cfg).to(gs.device)
+        loaded_dict = torch.load(chaser_model_path)
+        temp_policy.load_state_dict(loaded_dict["model_state_dict"])
+        temp_policy.eval()
+        chaser_policy = temp_policy.act_inference
+        print(f"Chaser policy loaded from: {chaser_model_path}")
+    else:
+        print(f"Warning: Chaser model not found: {chaser_model_path}")
+
     # Create environment with viewer
     env = Go2TagEnv(
-        num_envs=1, env_cfg=env_cfg, obs_cfg=obs_cfg, reward_cfg=reward_cfg, command_cfg=command_cfg, show_viewer=True
+        num_envs=1,
+        env_cfg=env_cfg,
+        obs_cfg=obs_cfg,
+        reward_cfg=reward_cfg,
+        command_cfg=command_cfg,
+        show_viewer=True,
+        chaser_policy=chaser_policy,
     )
 
     runner = OnPolicyRunner(env, train_cfg, log_dir, device=gs.device)
