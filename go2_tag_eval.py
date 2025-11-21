@@ -40,7 +40,7 @@ def main():
 
         policy_cfg = train_cfg["policy"].copy()
         policy_cfg.pop("class_name", None)  # class_nameを除外
-        temp_policy = ActorCritic(obs_cfg["num_obs"], None, env_cfg["num_actions"], **policy_cfg).to(gs.device)
+        temp_policy = ActorCritic(obs_cfg["num_obs"], obs_cfg["num_obs"], env_cfg["num_actions"], **policy_cfg).to(gs.device)
         loaded_dict = torch.load(chaser_model_path)
         temp_policy.load_state_dict(loaded_dict["model_state_dict"])
         temp_policy.eval()
