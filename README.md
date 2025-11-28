@@ -11,6 +11,7 @@ UnitreeGo2の強化学習による移動制御プロジェクト
 - ✅ ジャンプ（Jump）
 - ✅ 走行（Running）
 - ✅ バックフリップデモ（Backflip Demo）
+- ✅ 鬼ごっこコンペティション（Tag Game Competition）
 
 ### 開発中機能（ブランチで開発中）
 - 🚧 段差地形歩行（Terrain Walking）- `feature/terrain-walking`ブランチ
@@ -180,6 +181,43 @@ python go2_backflip.py -e single   # シングルバックフリップ
 python go2_backflip.py -e double   # ダブルバックフリップ
 ```
 
+### 鬼ごっこコンペティション（Tag Game Competition）
+
+2体のGo2ロボットが対戦する鬼ごっこゲームです。各チームが「逃げ側（Runner）」と「鬼側（Chaser）」の両方のモデルを学習させ、対戦形式で競います。
+
+**対戦ルール:**
+1. チームAの鬼 vs チームBの逃げ → 逃げた秒数を記録
+2. チームBの鬼 vs チームAの逃げ → 逃げた秒数を記録
+3. 合計生存秒数が多いチームの勝ち
+
+**逃げ側の学習:**
+```bash
+python tag_game_train_runner.py -e team_a_runner --load_exp_name go2-walking-2.0from1.5 --ckpt 400
+```
+
+**鬼側の学習:**
+```bash
+# Algorithm-based runner as opponent
+python tag_game_train_chaser.py -e team_a_chaser --load_exp_name go2-walking-2.0from1.5 --ckpt 400
+
+# Trained runner model as opponent
+python tag_game_train_chaser.py -e team_a_chaser --load_exp_name go2-walking-2.0from1.5 --ckpt 400 --runner_exp_name team_a_runner --runner_ckpt 100
+```
+
+**コンペティション実行:**
+```bash
+python tag_game_competition.py \
+    --team_a_runner team_a_runner --team_a_runner_ckpt 500 \
+    --team_a_chaser team_a_chaser --team_a_chaser_ckpt 500 \
+    --team_b_runner team_b_runner --team_b_runner_ckpt 500 \
+    --team_b_chaser team_b_chaser --team_b_chaser_ckpt 500 \
+    --show_viewer
+```
+
+**カスタマイズ:**
+- 追跡アルゴリズム: `tag_game_train_runner.py` 内の `compute_chaser_commands()` を編集
+- 逃走アルゴリズム: `tag_game_train_chaser.py` 内の `compute_runner_commands()` を編集
+
 ---
 
 ## 開発中機能
@@ -248,6 +286,10 @@ locomotion/
 ├── go2_running_from_walking.py  # 走行訓練スクリプト（歩行から開始・推奨）
 ├── go2_running_eval.py          # 走行評価スクリプト
 ├── go2_backflip.py              # バックフリップデモ
+├── tag_game_env.py              # 鬼ごっこ環境クラス
+├── tag_game_train_runner.py     # 逃げ側訓練スクリプト
+├── tag_game_train_chaser.py     # 鬼側訓練スクリプト
+├── tag_game_competition.py      # コンペティション実行スクリプト
 ├── backflip/                    # バックフリップ開発ディレクトリ（feature/backflipブランチ）
 ├── terrain/                     # 地形歩行開発ディレクトリ（feature/terrain-walkingブランチ）
 ├── logs/                        # 訓練ログとモデル
