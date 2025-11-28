@@ -206,7 +206,7 @@ def main():
 
     runner.learn(num_learning_iterations=args.max_iterations, init_at_random_ep_len=True)
 
-    # macOS notification with sound
+    # macOS notification
     pf = system()
     if pf == "Darwin":
         os.system(f"afplay /System/Library/Sounds/Blow.aiff")
